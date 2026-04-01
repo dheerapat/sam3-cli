@@ -1,4 +1,6 @@
-# sam-demo
+# SAM3-CLI 
+
+![](/showcase.png)
 
 Minimal CLI for running Meta's SAM3 text-prompted segmentation on a local image or image URL.
 
