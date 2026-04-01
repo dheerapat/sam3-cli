@@ -15,15 +15,8 @@ hf auth login
 
 ## Install
 
-Install the project in editable mode so the `sam` command is available locally:
-
 ```bash
-uv pip install -e .
-```
-
-You can also run it without installing:
-
-```bash
+uv sync
 uv run sam --help
 ```
 
