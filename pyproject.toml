@@ -26,4 +26,4 @@ dependencies = [
 sam = "main:main"
 
 [tool.hatch.build.targets.wheel]
-include = ["main.py"]
+include = ["main.py", "src/"]
