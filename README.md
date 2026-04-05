@@ -12,7 +12,7 @@ Minimal CLI for running Meta's SAM3 text-prompted segmentation on local images, 
 Accept the model terms at `https://huggingface.co/facebook/sam3` and authenticate before running:
 
 ```bash
-huggingface-cli login
+hf auth login
 ```
 
 ## Install
