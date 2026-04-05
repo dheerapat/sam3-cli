@@ -1,5 +1,6 @@
 import argparse
 import io
+from fractions import Fraction
 from pathlib import Path
 from urllib.parse import urlparse
 
@@ -11,7 +12,6 @@ import torch
 from huggingface_hub.errors import GatedRepoError
 from PIL import Image
 from transformers import Sam3Model, Sam3Processor, Sam3VideoModel, Sam3VideoProcessor
-from transformers.video_utils import load_video
 
 
 # ---------------------------------------------------------------------------
@@ -133,31 +133,62 @@ def run_segmentation(
 # ---------------------------------------------------------------------------
 
 
-def load_video_frames(video_input):
-    """Load a video from a local path or URL and return (frames, fps).
+def _open_video(video_input):
+    if is_url(video_input):
+        return av.open(video_input)
+    return av.open(str(Path(video_input).expanduser().resolve()))
 
-    frames is a list of PIL.Image.RGB objects, one per video frame.
-    fps is the native frame rate of the source video (used when writing output).
-    """
+
+def load_video_frames(video_input, start_frame=0, max_frames=50):
     try:
-        # load_video returns (np.ndarray of shape T×H×W×C, metadata)
-        raw_frames, metadata = load_video(video_input, backend="pyav")
+        container = _open_video(video_input)
     except Exception as exc:
-        raise SystemExit(f"Failed to load video '{video_input}': {exc}") from exc
+        raise SystemExit(f"Failed to open video '{video_input}': {exc}") from exc
 
-    fps = float(metadata.get("fps", 25.0)) if isinstance(metadata, dict) else 25.0
-    frames = [Image.fromarray(f).convert("RGB") for f in raw_frames]
+    stream = container.streams.video[0]
+        fps = stream.average_rate if stream.average_rate else Fraction(25)
+
+    frames = []
+    for idx, frame in enumerate(container.decode(stream)):
+        if idx < start_frame:
+            continue
+        if len(frames) >= max_frames:
+            break
+        frames.append(frame.to_image().convert("RGB"))
+        if len(frames) == 1:
+            print(
+                f"Decoding frames {start_frame}..{start_frame + max_frames - 1}...",
+                flush=True,
+            )
+        if len(frames) % 10 == 0:
+            print(f"  Decoded {len(frames)}/{max_frames} frames", flush=True)
+
+    container.close()
+
+    if not frames:
+        raise SystemExit(
+            f"No frames decoded (start_frame={start_frame}, video may be too short)"
+        )
+
+    print(
+        f"Loaded {len(frames)} frames [{start_frame}..{start_frame + len(frames) - 1}]",
+        flush=True,
+    )
     return frames, fps
 
 
-def default_video_output_path(video_input):
+def default_video_output_path(video_input, start_frame=0, max_frames=50):
     if is_url(video_input):
         parsed = urlparse(video_input)
         name = Path(parsed.path).name or "video"
-        return Path.cwd() / f"{Path(name).stem}.sam.mp4"
+        stem = Path(name).stem
+    else:
+        stem = Path(video_input).expanduser().resolve().stem
 
-    video_path = Path(video_input).expanduser().resolve()
-    return video_path.with_suffix(".sam.mp4")
+    if start_frame > 0:
+        end_frame = start_frame + max_frames - 1
+        return Path.cwd() / f"{stem}.sam.f{start_frame}-{end_frame}.mp4"
+    return Path.cwd() / f"{stem}.sam.mp4"
 
 
 def load_video_model(device):
@@ -180,7 +211,7 @@ def load_video_model(device):
 def run_video_segmentation(model, processor, frames, prompt, device, max_frames):
     torch_dtype = torch.bfloat16 if device == "cuda" else torch.float32
 
-    print(f"Initializing video session for {len(frames)} frames...")
+    print(f"Initializing video session for {len(frames)} frames...", flush=True)
     inference_session = processor.init_video_session(
         video=frames,
         inference_device=device,
@@ -193,7 +224,7 @@ def run_video_segmentation(model, processor, frames, prompt, device, max_frames)
         text=prompt,
     )
 
-    print(f"Propagating through up to {max_frames} frames...")
+    print(f"Propagating through up to {max_frames} frames...", flush=True)
     outputs_per_frame = {}
     for model_outputs in model.propagate_in_video_iterator(
         inference_session=inference_session,
@@ -201,6 +232,11 @@ def run_video_segmentation(model, processor, frames, prompt, device, max_frames)
     ):
         processed = processor.postprocess_outputs(inference_session, model_outputs)
         outputs_per_frame[model_outputs.frame_idx] = processed
+        n_done = len(outputs_per_frame)
+        if n_done % 5 == 0 or n_done == max_frames:
+            print(f"  Propagated {n_done}/{max_frames} frames", flush=True)
+
+    print(f"Propagation complete ({len(outputs_per_frame)} frames)", flush=True)
 
     return outputs_per_frame
 
@@ -218,6 +254,7 @@ def save_video_output(frames, outputs_per_frame, output_path, fps):
     # Reasonable quality for a demo output
     stream.options = {"crf": "18"}
 
+    total = len(frames)
     total_objects = 0
     for idx, frame_pil in enumerate(frames):
         frame_data = outputs_per_frame.get(idx)
@@ -233,14 +270,17 @@ def save_video_output(frames, outputs_per_frame, output_path, fps):
         for packet in stream.encode(av_frame):
             container.mux(packet)
 
+        if (idx + 1) % 10 == 0 or idx + 1 == total:
+            print(f"  Encoded {idx + 1}/{total} frames", flush=True)
+
     # Flush encoder
     for packet in stream.encode():
         container.mux(packet)
     container.close()
 
-    print(f"Processed {len(outputs_per_frame)} frames")
-    print(f"Max objects detected in a single frame: {total_objects}")
-    print(f"Saved overlay video to {output_path}")
+    print(f"Processed {len(outputs_per_frame)} frames", flush=True)
+    print(f"Max objects detected in a single frame: {total_objects}", flush=True)
+    print(f"Saved overlay video to {output_path}", flush=True)
 
 
 # ---------------------------------------------------------------------------
@@ -304,6 +344,12 @@ def build_parser():
         default=50,
         help="Maximum number of frames to process (default: 50)",
     )
+    video_parser.add_argument(
+        "--start-frame",
+        type=int,
+        default=0,
+        help="Frame index to start processing from (default: 0)",
+    )
 
     return parser
 
@@ -340,11 +386,20 @@ def run_image_command(args):
 
 def run_video_command(args):
     device = get_device(args.device)
+    start_frame = args.start_frame
+    max_frames = args.max_frames
+
+    print(f"Device: {device}", flush=True)
+    if device == "cpu":
+        print("Warning: Running on CPU — inference will be slow.", flush=True)
+
     output_path = (
-        (args.output or default_video_output_path(args.input)).expanduser().resolve()
+        (args.output or default_video_output_path(args.input, start_frame, max_frames))
+        .expanduser()
+        .resolve()
     )
 
-    frames, fps = load_video_frames(args.input)
+    frames, fps = load_video_frames(args.input, start_frame, max_frames)
     model, processor = load_video_model(device)
     outputs_per_frame = run_video_segmentation(
         model,
@@ -352,7 +407,7 @@ def run_video_command(args):
         frames,
         args.prompt,
         device,
-        args.max_frames,
+        max_frames,
     )
 
     save_video_output(frames, outputs_per_frame, output_path, fps)
