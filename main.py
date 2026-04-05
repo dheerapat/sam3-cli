@@ -13,7 +13,6 @@ from huggingface_hub.errors import GatedRepoError
 from PIL import Image
 from transformers import Sam3Model, Sam3Processor, Sam3VideoModel, Sam3VideoProcessor
 
-
 # ---------------------------------------------------------------------------
 # Shared helpers
 # ---------------------------------------------------------------------------
@@ -146,7 +145,7 @@ def load_video_frames(video_input, start_frame=0, max_frames=50):
         raise SystemExit(f"Failed to open video '{video_input}': {exc}") from exc
 
     stream = container.streams.video[0]
-        fps = stream.average_rate if stream.average_rate else Fraction(25)
+    fps = stream.average_rate if stream.average_rate else Fraction(25)
 
     frames = []
     for idx, frame in enumerate(container.decode(stream)):
