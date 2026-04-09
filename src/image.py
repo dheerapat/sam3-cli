@@ -80,6 +80,16 @@ def run_segmentation(
     )[0]
 
 
+def _run_falcon(args, device, image, output_path):
+    from src.falcon import load_falcon_model, run_falcon_segmentation
+
+    model, tokenizer, model_args = load_falcon_model(device)
+    results = run_falcon_segmentation(
+        model, tokenizer, model_args, image, args.prompt, device
+    )
+    return results
+
+
 def run_image_command(args):
     device = get_device(args.device)
     output_path = (
@@ -87,16 +97,20 @@ def run_image_command(args):
     )
 
     image = load_image(args.input)
-    model, processor = load_model(device)
-    results = run_segmentation(
-        model,
-        processor,
-        image,
-        args.prompt,
-        device,
-        args.threshold,
-        args.mask_threshold,
-    )
+
+    if args.model == "falcon":
+        results = _run_falcon(args, device, image, output_path)
+    else:
+        model, processor = load_model(device)
+        results = run_segmentation(
+            model,
+            processor,
+            image,
+            args.prompt,
+            device,
+            args.threshold,
+            args.mask_threshold,
+        )
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
     overlay_masks(image, masks=results["masks"]).save(output_path)

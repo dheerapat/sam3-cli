@@ -179,6 +179,12 @@ def count_frames(video_input):
 
 
 def run_video_command(args):
+    if args.model == "falcon":
+        raise SystemExit(
+            "Falcon Perception does not support video segmentation yet. "
+            "Use --model sam3 (default) for video."
+        )
+
     if args.frames:
         total = count_frames(args.input)
         print(total)

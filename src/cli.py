@@ -16,6 +16,12 @@ def _add_common_args(parser):
         help="Device to run inference on (default: auto)",
     )
     parser.add_argument(
+        "--model",
+        choices=("sam3", "falcon"),
+        default="sam3",
+        help="Segmentation model to use (default: sam3)",
+    )
+    parser.add_argument(
         "--threshold",
         type=float,
         default=0.5,
