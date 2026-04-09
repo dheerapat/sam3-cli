@@ -2,18 +2,29 @@
 
 ![](/showcase.png)
 
-Minimal CLI for running Meta's SAM3 text-prompted segmentation on local images, image URLs, local videos, and video URLs.
+Minimal CLI for running text-prompted segmentation on local images, image URLs, local videos, and video URLs.
+
+Supports two models:
+
+- **SAM3** (default) — Meta's SAM3 via `facebook/sam3` on Hugging Face
+- **Falcon Perception** — TII's Falcon Perception via `tiiuae/Falcon-Perception`
 
 ## Requirements
 
 - Python 3.13+
-- Access to the gated `facebook/sam3` model on Hugging Face
+- CUDA GPU (recommended for both models)
 
-Accept the model terms at `https://huggingface.co/facebook/sam3` and authenticate before running:
+### SAM3 access
+
+The default model (`facebook/sam3`) is gated. Accept the terms at `https://huggingface.co/facebook/sam3` and authenticate before running:
 
 ```bash
 hf auth login
 ```
+
+### Falcon Perception
+
+No authentication is required. The model is downloaded automatically on first use.
 
 ## Install
 
@@ -47,6 +58,12 @@ Optional output path:
 uv run sam image -i image.jpg -p "ear" -o result.png
 ```
 
+#### Using Falcon Perception
+
+```bash
+uv run sam image -i image.jpg -p "the red car" --model falcon
+```
+
 ### Video
 
 ```bash
@@ -54,6 +71,8 @@ uv run sam video -i video.mp4 -p "penguin"
 ```
 
 Writes `<stem>.sam.mp4` to the current directory. Processing 50 frames by default.
+
+> **Note:** Video segmentation is only available with SAM3 (`--model sam3`, the default). Falcon Perception does not support video yet.
 
 Optional flags:
 
@@ -85,6 +104,7 @@ Outputs: `video-1.sam.mp4`, `video-2.sam.mp4`, ...
 | `-i / --input` | required | Path or URL to the input |
 | `-p / --prompt` | required | Text prompt to segment |
 | `-o / --output` | auto | Path to write the output file |
+| `--model` | `sam3` | `sam3` or `falcon` |
 | `--device` | `auto` | `auto`, `cpu`, or `cuda` |
 | `--threshold` | `0.5` | Instance confidence threshold |
 | `--mask-threshold` | `0.5` | Mask binarisation threshold |
